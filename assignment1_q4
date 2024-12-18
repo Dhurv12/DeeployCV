@@ -2,87 +2,80 @@ from PIL import Image
 import numpy as np
 
 def is_flag_of_indonesia_or_poland(image_path):
-    """
-    Determine if the given image is the flag of Indonesia or Poland by detecting flag boundaries.
-
-    Parameters:
-    image_path (str): Path to the image file.
-
-    Returns:
-    str: "Indonesia" if the flag is Indonesia's,
-         "Poland" if the flag is Poland's,
-         "Neither" if it matches neither.
-    """
-    # Open the image and convert it to RGB
+    
+    # Open the image and convert to RGB
     image = Image.open(image_path).convert("RGB")
+    image = image.resize((400, 300))  # Resize for consistency and performance
 
-    # Convert image to grayscale for boundary detection
-    gray_image = image.convert("L")
-    gray_pixels = np.array(gray_image)
+    # Convert image to NumPy array
+    pixels = np.array(image)
 
-    # Detect edges using a simple gradient method
-    edges = np.abs(np.diff(gray_pixels, axis=0)) + np.abs(np.diff(gray_pixels, axis=1))
+    # Thresholds for detecting red and white pixels
+    def is_red(pixel):
+        r, g, b = pixel
+        return r > 150 and g < 100 and b < 100  # Strong red dominance
 
-    # Threshold edges to identify significant changes
-    edge_threshold = 50
-    edges[edges < edge_threshold] = 0
-    edges[edges >= edge_threshold] = 255
+    def is_white(pixel):
+        r, g, b = pixel
+        return r > 200 and g > 200 and b > 200  # Near equal strong RGB values
 
-    # Find the bounding box of the largest connected component
-    def find_bounding_box(edge_pixels):
-        rows, cols = np.where(edge_pixels > 0)
-        if len(rows) == 0 or len(cols) == 0:
-            return None  # No significant edges detected
-        return (min(rows), max(rows), min(cols), max(cols))
+    # Mask to detect red and white regions
+    height, width, _ = pixels.shape
+    red_mask = np.zeros((height, width), dtype=bool)
+    white_mask = np.zeros((height, width), dtype=bool)
 
-    bbox = find_bounding_box(edges)
+    for i in range(height):
+        for j in range(width):
+            if is_red(pixels[i, j]):
+                red_mask[i, j] = True
+            elif is_white(pixels[i, j]):
+                white_mask[i, j] = True
 
-    if bbox is None:
-        return "Neither"  # No flag-like region found
+    # Combine red and white masks to locate the flag region
+    combined_mask = red_mask | white_mask
 
-    # Crop the region of interest based on the bounding box
-    top, bottom, left, right = bbox
-    cropped_image = image.crop((left, top, right, bottom))
+    # Find the bounding box of the flag
+    rows, cols = np.where(combined_mask)
+    if len(rows) == 0 or len(cols) == 0:
+        return "Neither"  # No red or white detected
 
-    # Resize the cropped region to standard dimensions
-    cropped_image = cropped_image.resize((100, 60))
+    top, bottom = min(rows), max(rows)
+    left, right = min(cols), max(cols)
 
-    # Convert cropped image to a NumPy array
-    pixels = np.array(cropped_image)
+    # Crop the detected flag region
+    cropped_flag = image.crop((left, top, right, bottom))
+    cropped_flag = cropped_flag.resize((200, 100))  # Standardize the size
 
-    # Function to calculate the dominant color in a section
-    def dominant_color(section):
-        section_flat = section.reshape(-1, 3)
-        unique_colors, counts = np.unique(section_flat, axis=0, return_counts=True)
-        dominant_idx = np.argmax(counts)
-        return unique_colors[dominant_idx]
+    # Convert cropped flag to a NumPy array
+    flag_pixels = np.array(cropped_flag)
 
-    # Check if a color is red
-    def is_red(color):
-        return color[0] > 150 and color[1] < 100 and color[2] < 100
+    # Count red and white pixels in top and bottom halves
+    mid = flag_pixels.shape[0] // 2
+    top_half = flag_pixels[:mid, :, :]
+    bottom_half = flag_pixels[mid:, :, :]
 
-    # Check if a color is white
-    def is_white(color):
-        return color[0] > 200 and color[1] > 200 and color[2] > 200
+    def count_colors(section):
+        red_count = 0
+        white_count = 0
+        for row in section:
+            for pixel in row:
+                if is_red(pixel):
+                    red_count += 1
+                elif is_white(pixel):
+                    white_count += 1
+        return red_count, white_count
 
-    # Split the cropped image into top and bottom halves
-    height = pixels.shape[0]
-    mid = height // 2
-    top_half = pixels[:mid, :, :]
-    bottom_half = pixels[mid:, :, :]
+    # Analyze top and bottom halves
+    red_top, white_top = count_colors(top_half)
+    red_bottom, white_bottom = count_colors(bottom_half)
 
-    # Determine dominant colors for the top and bottom halves
-    top_dominant_color = dominant_color(top_half)
-    bottom_dominant_color = dominant_color(bottom_half)
-
-    # Check if the colors match Indonesia's or Poland's flag patterns
-    if is_red(top_dominant_color) and is_white(bottom_dominant_color):
+    # Determine flag type
+    if red_top > white_top and white_bottom > red_bottom:
         return "Indonesia"
-    elif is_white(top_dominant_color) and is_red(bottom_dominant_color):
+    elif white_top > red_top and red_bottom > white_bottom:
         return "Poland"
+    else:
+        return "Neither"
 
-    return "Neither"
-
-# Example usage:
-# result = is_flag_of_indonesia_or_poland("path_to_flag_image.jpg")
-# print(result)
+result = is_flag_of_indonesia_or_poland(r'C:\Users\Dhruv\OneDrive\Pictures\Screenshots\Screenshot 2024-12-18 153954.png')
+print(result)
